@@ -14,11 +14,23 @@ TIMEZONE = os.getenv("TZ", "America/Sao_Paulo").strip() or "America/Sao_Paulo"
 FOLLOWUP_DAYS = int(os.getenv("FOLLOWUP_DAYS", "5"))
 FOLLOWUP_MAX_LEADS = int(os.getenv("FOLLOWUP_MAX_LEADS", "40"))
 
-# Status/etapas que nunca devem entrar no relatório
+# Status/etapas que devem entrar no relatório.
+# Padrão: só Interação Amigável 1.
+# Para adicionar outros depois, use no Railway:
+# FOLLOWUP_INCLUDE_STATUSES=Interação Amigável 1,Interação Amigável 2
+FOLLOWUP_INCLUDE_STATUSES = [
+    s.strip() for s in os.getenv(
+        "FOLLOWUP_INCLUDE_STATUSES",
+        "Interação Amigável 1"
+    ).split(",")
+    if s.strip()
+]
+
+# Status/etapas que nunca devem entrar no relatório, mesmo que sejam incluídos por engano.
 FOLLOWUP_IGNORE_STATUSES = [
     s.strip() for s in os.getenv(
         "FOLLOWUP_IGNORE_STATUSES",
-        "Off,Venda Realizada"
+        "Off,Venda Realizada,Novo lead"
     ).split(",")
     if s.strip()
 ]

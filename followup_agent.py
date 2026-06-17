@@ -10,6 +10,7 @@ from config import (
     FOLLOWUP_DAYS,
     FOLLOWUP_MAX_LEADS,
     FOLLOWUP_IGNORE_STATUSES,
+    FOLLOWUP_INCLUDE_STATUSES,
 )
 from notion_reader import get_schema, find_property, prop_to_text, query_database
 from utils import normalize_key, clean_text, html_escape
@@ -74,6 +75,12 @@ def _status_ignorado(status: str) -> bool:
     return status_norm in ignorados
 
 
+def _status_incluido(status: str) -> bool:
+    status_norm = normalize_key(status)
+    incluidos = [normalize_key(s) for s in FOLLOWUP_INCLUDE_STATUSES]
+    return status_norm in incluidos
+
+
 def _formatar_data_br(data_iso: str) -> str:
     data = _parse_date(data_iso)
     if not data:
@@ -108,6 +115,11 @@ def ler_leads_para_followup() -> List[Dict]:
         potencial = prop_to_text(props.get(potencial_prop[0])) if potencial_prop else ""
 
         if _status_ignorado(status):
+            continue
+
+        # O agente de follow-up deve focar apenas nas etapas comerciais configuradas.
+        # Por padrão, somente "Interação Amigável 1" entra no relatório.
+        if not _status_incluido(status):
             continue
 
         dias = _dias_sem_contato(ultimo)
@@ -153,6 +165,7 @@ def montar_mensagem_followup(leads: List[Dict]) -> str:
         "📌 <b>Follow-up Comercial Cave</b>",
         f"Executado em: {html_escape(agora)}",
         f"Regra: último contato há {FOLLOWUP_DAYS}+ dias",
+        f"Focando em: {html_escape(', '.join(FOLLOWUP_INCLUDE_STATUSES))}",
         f"Ignorando: {html_escape(', '.join(FOLLOWUP_IGNORE_STATUSES))}",
         "",
     ]
