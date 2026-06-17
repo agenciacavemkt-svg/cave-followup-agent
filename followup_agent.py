@@ -13,7 +13,7 @@ from config import (
     FOLLOWUP_INCLUDE_STATUSES,
 )
 from notion_reader import get_schema, find_property, prop_to_text, query_database
-from utils import normalize_key, clean_text, html_escape
+from utils import normalize_key, clean_text
 
 TELEGRAM_LIMIT = 3500  # margem segura abaixo do limite oficial de 4096 caracteres
 
@@ -29,12 +29,11 @@ def enviar_telegram(mensagem: str) -> bool:
 
     for idx, parte in enumerate(partes, start=1):
         if len(partes) > 1:
-            parte = f"<b>Parte {idx}/{len(partes)}</b>\n\n" + parte
+            parte = f"Parte {idx}/{len(partes)}\n\n" + parte
 
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
             "text": parte,
-            "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
 
@@ -123,7 +122,9 @@ def ler_leads_para_followup() -> List[Dict]:
             continue
 
         dias = _dias_sem_contato(ultimo)
-        deve_entrar = dias is None or dias >= FOLLOWUP_DAYS
+        # Follow-up só entra quando já existe uma data de último contato.
+        # Lead sem data não aparece mais no relatório para não lotar o Telegram.
+        deve_entrar = dias is not None and dias >= FOLLOWUP_DAYS
         if not deve_entrar:
             continue
 
@@ -137,8 +138,8 @@ def ler_leads_para_followup() -> List[Dict]:
             "potencial": potencial or "Sem potencial",
         })
 
-    # Mais atrasados primeiro; sem data no topo para revisar.
-    leads.sort(key=lambda x: (9999 if x["dias_sem_contato"] is None else x["dias_sem_contato"]), reverse=True)
+    # Mais atrasados primeiro.
+    leads.sort(key=lambda x: x["dias_sem_contato"] or 0, reverse=True)
     return leads[:FOLLOWUP_MAX_LEADS]
 
 
@@ -152,9 +153,10 @@ def _linha_lead(i: int, lead: Dict) -> str:
     proxima = lead.get("proxima_acao", "-")
 
     return (
-        f"{i}. <b>{html_escape(instagram)}</b> — {html_escape(nome)}\n"
-        f"Último contato: {html_escape(ultimo)} ({html_escape(dias_txt)})\n"
-        f"Status: {html_escape(status)} | Ação: {html_escape(proxima)}\n"
+        f"{i}. {instagram} — {nome}\n"
+        f"Último contato: {ultimo} ({dias_txt})\n"
+        f"Status: {status}\n"
+        f"Próxima ação: {proxima}\n"
     )
 
 
@@ -162,11 +164,11 @@ def montar_mensagem_followup(leads: List[Dict]) -> str:
     agora = datetime.now(ZoneInfo(TIMEZONE)).strftime("%d/%m/%Y às %H:%M")
 
     linhas = [
-        "📌 <b>Follow-up Comercial Cave</b>",
-        f"Executado em: {html_escape(agora)}",
+        "📌 Follow-up Comercial Cave",
+        f"Executado em: {agora}",
         f"Regra: último contato há {FOLLOWUP_DAYS}+ dias",
-        f"Focando em: {html_escape(', '.join(FOLLOWUP_INCLUDE_STATUSES))}",
-        f"Ignorando: {html_escape(', '.join(FOLLOWUP_IGNORE_STATUSES))}",
+        f"Focando em: {', '.join(FOLLOWUP_INCLUDE_STATUSES)}",
+        f"Ignorando: {', '.join(FOLLOWUP_IGNORE_STATUSES)}",
         "",
     ]
 
@@ -178,7 +180,7 @@ def montar_mensagem_followup(leads: List[Dict]) -> str:
     hoje = [l for l in leads if l.get("dias_sem_contato") is not None and 8 <= (l.get("dias_sem_contato") or 0) < 15]
     leves = [l for l in leads if l.get("dias_sem_contato") is not None and FOLLOWUP_DAYS <= (l.get("dias_sem_contato") or 0) < 8]
 
-    linhas.append(f"⚠️ <b>{len(leads)} leads precisam de atenção</b>")
+    linhas.append(f"⚠️ {len(leads)} leads precisam de atenção")
     linhas.append("")
 
     contador = 1
@@ -191,7 +193,7 @@ def montar_mensagem_followup(leads: List[Dict]) -> str:
     for titulo, grupo in grupos:
         if not grupo:
             continue
-        linhas.append(f"<b>{titulo}</b>")
+        linhas.append(titulo)
         linhas.append("")
         for lead in grupo:
             linhas.append(_linha_lead(contador, lead))
