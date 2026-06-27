@@ -11,17 +11,16 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 TIMEZONE = os.getenv("TZ", "America/Sao_Paulo").strip() or "America/Sao_Paulo"
 
 # Regra principal do follow-up
-FOLLOWUP_DAYS = int(os.getenv("FOLLOWUP_DAYS", "5"))
-FOLLOWUP_MAX_LEADS = int(os.getenv("FOLLOWUP_MAX_LEADS", "40"))
+# Novo padrão: manter constância maior, avisando a partir de 2 dias sem contato.
+FOLLOWUP_DAYS = int(os.getenv("FOLLOWUP_DAYS", "2"))
+FOLLOWUP_MAX_LEADS = int(os.getenv("FOLLOWUP_MAX_LEADS", "20"))
 
 # Status/etapas que devem entrar no relatório.
-# Padrão: só Interação Amigável 1.
-# Para adicionar outros depois, use no Railway:
-# FOLLOWUP_INCLUDE_STATUSES=Interação Amigável 1,Interação Amigável 2
+# Padrão: Interação Amigável 1 e Interação Amigável 2.
 FOLLOWUP_INCLUDE_STATUSES = [
     s.strip() for s in os.getenv(
         "FOLLOWUP_INCLUDE_STATUSES",
-        "Interação Amigável 1"
+        "Interação Amigável 1,Interação Amigável 2"
     ).split(",")
     if s.strip()
 ]
@@ -30,7 +29,10 @@ FOLLOWUP_INCLUDE_STATUSES = [
 FOLLOWUP_IGNORE_STATUSES = [
     s.strip() for s in os.getenv(
         "FOLLOWUP_IGNORE_STATUSES",
-        "Off,Venda Realizada,Novo lead"
+        "Novo lead,Off,Venda Realizada,Na Reserva,Enviado ao CRM,Descartado"
     ).split(",")
     if s.strip()
 ]
+
+# Lead sem data de último contato não entra no relatório por padrão.
+FOLLOWUP_INCLUDE_EMPTY_DATES = os.getenv("FOLLOWUP_INCLUDE_EMPTY_DATES", "false").strip().lower() in ["1", "true", "sim", "yes"]

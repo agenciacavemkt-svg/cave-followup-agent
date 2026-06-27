@@ -11,6 +11,7 @@ from config import (
     FOLLOWUP_MAX_LEADS,
     FOLLOWUP_IGNORE_STATUSES,
     FOLLOWUP_INCLUDE_STATUSES,
+    FOLLOWUP_INCLUDE_EMPTY_DATES,
 )
 from notion_reader import get_schema, find_property, prop_to_text, query_database
 from utils import normalize_key, clean_text
@@ -122,10 +123,12 @@ def ler_leads_para_followup() -> List[Dict]:
             continue
 
         dias = _dias_sem_contato(ultimo)
-        # Follow-up só entra quando já existe uma data de último contato.
-        # Lead sem data não aparece mais no relatório para não lotar o Telegram.
-        deve_entrar = dias is not None and dias >= FOLLOWUP_DAYS
-        if not deve_entrar:
+        # Por padrão, follow-up só entra quando já existe data de último contato.
+        # Se FOLLOWUP_INCLUDE_EMPTY_DATES=true, leads sem data entram para organização.
+        if dias is None:
+            if not FOLLOWUP_INCLUDE_EMPTY_DATES:
+                continue
+        elif dias < FOLLOWUP_DAYS:
             continue
 
         leads.append({
@@ -138,8 +141,17 @@ def ler_leads_para_followup() -> List[Dict]:
             "potencial": potencial or "Sem potencial",
         })
 
-    # Mais atrasados primeiro.
-    leads.sort(key=lambda x: x["dias_sem_contato"] or 0, reverse=True)
+    # Prioriza Interação Amigável 2, depois Interação Amigável 1, e dentro de cada grupo os mais atrasados.
+    prioridade_status = {
+        normalize_key("Interação Amigável 2"): 0,
+        normalize_key("Interação Amigável 1"): 1,
+    }
+    leads.sort(
+        key=lambda x: (
+            prioridade_status.get(normalize_key(x.get("status")), 99),
+            -(x.get("dias_sem_contato") or 0),
+        )
+    )
     return leads[:FOLLOWUP_MAX_LEADS]
 
 
@@ -163,10 +175,14 @@ def _linha_lead(i: int, lead: Dict) -> str:
 def montar_mensagem_followup(leads: List[Dict]) -> str:
     agora = datetime.now(ZoneInfo(TIMEZONE)).strftime("%d/%m/%Y às %H:%M")
 
+    total_interacao_2 = len([l for l in leads if normalize_key(l.get("status")) == normalize_key("Interação Amigável 2")])
+    total_interacao_1 = len([l for l in leads if normalize_key(l.get("status")) == normalize_key("Interação Amigável 1")])
+
     linhas = [
         "📌 Follow-up Comercial Cave",
         f"Executado em: {agora}",
         f"Regra: último contato há {FOLLOWUP_DAYS}+ dias",
+        f"Limite do dia: até {FOLLOWUP_MAX_LEADS} leads",
         f"Focando em: {', '.join(FOLLOWUP_INCLUDE_STATUSES)}",
         f"Ignorando: {', '.join(FOLLOWUP_IGNORE_STATUSES)}",
         "",
@@ -176,20 +192,19 @@ def montar_mensagem_followup(leads: List[Dict]) -> str:
         linhas.append("✅ Nenhum lead atrasado para follow-up hoje.")
         return "\n".join(linhas)
 
-    urgentes = [l for l in leads if l.get("dias_sem_contato") is None or (l.get("dias_sem_contato") or 0) >= 15]
-    hoje = [l for l in leads if l.get("dias_sem_contato") is not None and 8 <= (l.get("dias_sem_contato") or 0) < 15]
-    leves = [l for l in leads if l.get("dias_sem_contato") is not None and FOLLOWUP_DAYS <= (l.get("dias_sem_contato") or 0) < 8]
+    linhas.extend([
+        f"⚠️ {len(leads)} leads precisam de atenção hoje",
+        f"🔥 Interação Amigável 2: {total_interacao_2}",
+        f"🟡 Interação Amigável 1: {total_interacao_1}",
+        "",
+    ])
 
-    linhas.append(f"⚠️ {len(leads)} leads precisam de atenção")
-    linhas.append("")
-
-    contador = 1
     grupos = [
-        ("🔴 Urgentes / sem data / 15+ dias", urgentes),
-        ("🟡 Fazer hoje / 8 a 14 dias", hoje),
-        ("🟢 Se sobrar tempo / 5 a 7 dias", leves),
+        ("🔥 Prioridade 1 — Interação Amigável 2", [l for l in leads if normalize_key(l.get("status")) == normalize_key("Interação Amigável 2")]),
+        ("🟡 Prioridade 2 — Interação Amigável 1", [l for l in leads if normalize_key(l.get("status")) == normalize_key("Interação Amigável 1")]),
     ]
 
+    contador = 1
     for titulo, grupo in grupos:
         if not grupo:
             continue
@@ -200,6 +215,20 @@ def montar_mensagem_followup(leads: List[Dict]) -> str:
             contador += 1
         linhas.append("--------------------")
         linhas.append("")
+
+    outros = [
+        l for l in leads
+        if normalize_key(l.get("status")) not in [
+            normalize_key("Interação Amigável 1"),
+            normalize_key("Interação Amigável 2"),
+        ]
+    ]
+    if outros:
+        linhas.append("📎 Outros status incluídos")
+        linhas.append("")
+        for lead in outros:
+            linhas.append(_linha_lead(contador, lead))
+            contador += 1
 
     return "\n".join(linhas).strip()
 
